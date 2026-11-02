@@ -5,3 +5,4 @@ proof.html
 *.woff2
 proof.png
 sheet.png
+.venv/

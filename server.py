@@ -6,7 +6,8 @@
   GET  /<Name>-Regular.woff2   the freshly built font, used by the editor's live preview
 
 Listens on 127.0.0.1 only. Start it from this folder:
-  python3 server.py      then open http://127.0.0.1:8720
+  python3 server.py      sets itself up the first time, then opens http://127.0.0.1:8720 in the browser
+First run: makes a private Python in .venv/ and installs fontTools and brotli there (nothing system-wide).
 To edit from a phone or iPad on the same Wi-Fi: HOST=0.0.0.0 python3 server.py, then open http://<this Mac's IP>:8720
 (anyone on that Wi-Fi can reach it while it runs; use it at home, not on public Wi-Fi)
 """
@@ -15,12 +16,32 @@ import os
 import subprocess
 import sys
 import time
+import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from build import stem
-
 HERE = Path(__file__).resolve().parent
+VENV = HERE / ".venv"
+NEEDS = ["fonttools", "brotli", "pillow"]
+
+
+def setup():
+    """Run inside .venv with the packages installed; on the first run, make it (about a minute)."""
+    py = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if Path(sys.prefix).resolve() == VENV.resolve():
+        return
+    if not py.exists():
+        print("First run: setting up (about a minute)...", flush=True)
+        subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=True)
+        subprocess.run([str(py), "-m", "pip", "install", "--quiet", "--disable-pip-version-check", *NEEDS], check=True)
+    os.execv(str(py), [str(py), str(HERE / "server.py"), *sys.argv[1:]])
+
+
+if __name__ == "__main__":
+    setup()
+
+from build import stem  # noqa: E402  (needs fontTools, so after setup)
+
 SRC = HERE / "glyphs.json"
 EDITOR = "editor.html"
 PORT = int(os.environ.get("PORT", 8720))
@@ -80,9 +101,12 @@ if __name__ == "__main__":
     try:
         server = ThreadingHTTPServer((HOST, PORT), Handler)
     except OSError:
-        sys.exit(f"The editor is already running (port {PORT} is taken). Open http://127.0.0.1:{PORT} in Chrome.")
+        webbrowser.open(f"http://127.0.0.1:{PORT}")
+        sys.exit(f"The editor is already running (port {PORT} is taken): opened http://127.0.0.1:{PORT}.")
     print(f"Thai Pixel Font Editor: http://127.0.0.1:{PORT}  (keep this window open; Ctrl+C stops it)", flush=True)
     if HOST != "127.0.0.1":
         ip = subprocess.run(["ipconfig", "getifaddr", "en0"], capture_output=True, text=True).stdout.strip()
         print(f"On your phone or iPad (same Wi-Fi): http://{ip or '<this Mac IP>'}:{PORT}", flush=True)
+    if not os.environ.get("NO_BROWSER"):
+        webbrowser.open(f"http://127.0.0.1:{PORT}")
     server.serve_forever()

@@ -8,16 +8,15 @@ Make your own Thai and Latin pixel font by clicking pixels, then export a real f
 
 ## ภาษาไทย
 
-### 1. วางข้อความนี้ใน Claude Code เพื่อติดตั้ง
+### 1. วางลิงก์นี้ใน Claude Code
 
-เปิด Claude Code แล้ววางข้อความทั้งก้อนนี้ลงไป:
+เปิด Claude Code แล้ววางข้อความนี้ลงไป:
 
 ```text
-ช่วยติดตั้ง Thai Pixel Font Editor ให้หน่อย:
-1. clone https://github.com/luckyluke78/thai-pixel-font-editor ไว้ในโฟลเดอร์ Documents
-2. ติดตั้ง Python packages: fonttools brotli pillow
-3. เปิด server.py ในโฟลเดอร์นั้นแล้วเปิด http://127.0.0.1:8720 ใน Chrome ให้ฉัน
+https://github.com/luckyluke78/thai-pixel-font-editor ติดตั้งแล้วเปิดให้หน่อย
 ```
+
+Claude Code จะดาวน์โหลด ติดตั้งทุกอย่างให้เอง (ครั้งแรกประมาณ 1 นาที) แล้วเปิดหน้าแก้ฟอนต์ใน browser ให้ทันที
 
 ### 2. เริ่มใช้!
 
@@ -28,7 +27,7 @@ Make your own Thai and Latin pixel font by clicking pixels, then export a real f
 - กด **Export font (.ttf)** ได้ไฟล์ฟอนต์ ดับเบิลคลิกเพื่อติดตั้ง แล้วเลือกใช้ในแอปไหนก็ได้
 - ทุกการแก้ไขบันทึกเองและสร้างฟอนต์ใหม่ภายในประมาณ 1 วินาที ดูผลจริงได้ในกล่อง **Real font** ด้านล่าง
 
-ครั้งต่อไปที่จะใช้ บอก Claude Code ว่า "เปิด Thai Pixel Font Editor" หรือพิมพ์ใน Terminal:
+ครั้งต่อไป บอก Claude Code ว่า "เปิด Thai Pixel Font Editor" หรือพิมพ์ใน Terminal (หน้าแก้ฟอนต์จะเปิดเอง):
 
 ```bash
 cd ~/Documents/thai-pixel-font-editor && python3 server.py
@@ -38,16 +37,15 @@ cd ~/Documents/thai-pixel-font-editor && python3 server.py
 
 ## English
 
-### 1. Paste this into Claude Code to install
+### 1. Paste the link into Claude Code
 
-Open Claude Code and paste this whole block:
+Open Claude Code and paste:
 
 ```text
-Please install Thai Pixel Font Editor for me:
-1. Clone https://github.com/luckyluke78/thai-pixel-font-editor into my Documents folder
-2. Install the Python packages fonttools brotli pillow
-3. Start server.py in that folder and open http://127.0.0.1:8720 in Chrome for me
+https://github.com/luckyluke78/thai-pixel-font-editor install it and open it for me
 ```
+
+Claude Code downloads it, sets everything up by itself (about a minute the first time) and opens the editor in your browser.
 
 ### 2. Run!
 
@@ -58,7 +56,7 @@ Please install Thai Pixel Font Editor for me:
 - **Export font (.ttf)** downloads the font. Double-click it to install, then pick it in any app.
 - Every change saves itself and rebuilds the font in about a second; the **Real font** box at the bottom shows it.
 
-Next time, tell Claude Code "open Thai Pixel Font Editor", or run in Terminal:
+Next time, tell Claude Code "open Thai Pixel Font Editor", or run this in Terminal (the editor opens by itself):
 
 ```bash
 cd ~/Documents/thai-pixel-font-editor && python3 server.py
@@ -77,7 +75,8 @@ cd ~/Documents/thai-pixel-font-editor && python3 server.py
 | File | Job |
 |---|---|
 | `glyphs.json` | The font itself, the one source |
-| `server.py` | Local server on 127.0.0.1: the editor, autosave, rebuild, check |
+| `server.py` | Local server on 127.0.0.1: sets itself up on first run (`.venv/`), opens the editor, autosaves, rebuilds, checks |
+| `CLAUDE.md` | Setup steps and rules for Claude Code |
 | `editor.html` | The click editor |
 | `build.py` | `glyphs.json` → `.ttf` and `.woff2` with Thai mark positioning |
 | `check.py` | Look-alike distances; `--proof` renders a proof page in Chrome |
