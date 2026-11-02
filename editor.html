@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thai Pixel Font Editor</title>
+<style>
+  /* Pixel editor for glyphs.json (copied from the Pixel 32 editor, window and zoom set for the 20-cell grid). Served by server.py it loads by itself, autosaves each stroke, rebuilds the font and previews it live; opened as a file it works as before (Open, click, Save, run the build). */
+  :root { --ink: #1A1714; --orange: #FA5A14; --paper: #FFFFFF; --line: #E4DED8; --muted: #6E6862; --chip: #F3EFEC; --tint: #FFEFE6; --ghost: #D9D2CB; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 -apple-system, "TH Chakra Petch", sans-serif; }
+  header { padding: 16px; text-align: center; border-bottom: 2px solid var(--line); }
+  header h1 { margin: 0 0 10px; font-size: 22px; }
+  .bar { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; align-items: center; }
+  button, select, input[type=text] { font: inherit; border: 2px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 10px; padding: 6px 12px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--ink); }
+  button.primary { background: var(--orange); border-color: var(--orange); color: #fff; font-weight: 700; }
+  button.on { border-color: var(--orange); background: var(--tint); }
+  .status { color: var(--muted); font-size: 13px; min-height: 20px; margin-top: 6px; }
+  main { display: grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .panel { border: 2px solid var(--line); border-radius: 14px; padding: 12px; }
+  .panel h2 { margin: 0 0 8px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; text-align: center; }
+  #list { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 4px; max-height: 70vh; overflow: auto; }
+  #list button { padding: 2px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; }
+  #list button.on { border-color: var(--orange); background: var(--tint); }
+  #list button.edited::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--orange); }
+  #list canvas { image-rendering: pixelated; }
+  .edit { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+  .glyphbar { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; align-items: center; }
+  .big { font-size: 40px; line-height: 1; min-width: 56px; text-align: center; }
+  #grid { border: 2px solid var(--line); border-radius: 10px; cursor: crosshair; max-width: 100%; touch-action: none; }
+  .legend { color: var(--muted); font-size: 13px; text-align: center; }
+  .legend b { color: var(--ink); }
+  #preview { width: 100%; image-rendering: pixelated; border-radius: 10px; background: var(--paper); }
+  #live { width: 100%; font-family: LiveF, sans-serif; font-size: 80px; line-height: 1.7; white-space: nowrap; overflow-x: auto; border: 2px solid var(--line); border-radius: 10px; padding: 0 12px; }
+  #report { margin: 6px auto 0; max-width: 1100px; font: 12px/1.5 ui-monospace, monospace; color: var(--muted); white-space: pre-wrap; text-align: left; }
+  #report.fail, #checkline.fail { color: #C0392B; }
+  #reportbox { margin-top: 6px; }
+  #checkline { cursor: pointer; font-size: 13px; color: var(--muted); }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Thai Pixel Font Editor</h1>
+  <div class="bar">
+    <button id="open" class="primary">Open glyphs JSON</button>
+    <button id="save">Save</button>
+    <button id="undo">Undo</button>
+    <label id="namebox" hidden>Font name <input id="fname" type="text" size="16"></label>
+    <button id="exttf" class="primary" hidden>Export font (.ttf)</button>
+    <button id="exwoff" hidden>Web font (.woff2)</button>
+    <label>Ghost base <input id="ghost" type="text" value="ก" size="2" maxlength="1"></label>
+    <label>Zoom <select id="zoom"><option>16</option><option selected>24</option><option>32</option></select></label>
+  </div>
+  <details id="reportbox" hidden><summary id="checkline"></summary><pre id="report"></pre></details>
+  <div class="status" id="status">Open <b>glyphs.json</b> from this folder. In Chrome, Save writes straight back to it.</div>
+</header>
+<main>
+  <section class="panel">
+    <h2>Glyphs</h2>
+    <div id="list"></div>
+  </section>
+  <section class="panel edit">
+    <h2>Edit</h2>
+    <div class="glyphbar">
+      <span class="big" id="cur">–</span>
+      <button data-move="-1,0">←</button><button data-move="1,0">→</button>
+      <button data-move="0,1">↑</button><button data-move="0,-1">↓</button>
+      <button id="wminus">width − ( [ )</button><span id="wval">–</span><button id="wplus">width + ( ] )</button>
+      <button id="clear">Clear</button><button id="retrace">Mark as drawn</button>
+    </div>
+    <div class="glyphbar">
+      <button id="selmode">Select (V)</button><button id="selall">Select all (⌘A)</button><button id="selnone">Deselect (Esc)</button><button id="seldel">Delete selected</button>
+      <span id="selinfo" class="legend"></span>
+    </div>
+    <canvas id="grid"></canvas>
+    <div class="legend">Click or drag to draw · Shift-drag or right-drag to erase ·
+      <b>Select</b>: drag a box round pixels (Shift adds), drag the orange pixels or use the arrow keys to move them ·
+      <span class="sw" style="background:#FA5A14"></span> baseline ·
+      <span class="sw" style="background:#2D6CDF"></span> body top (row 7) · <span class="sw" style="background:#9BC53D"></span> upper vowels (8) · <span class="sw" style="background:#B388EB"></span> tone over a vowel (11) · <span class="sw" style="background:#E9C46A"></span> lower vowels (−2) ·
+      <span class="sw" style="background:#E0457B"></span> advance ·
+      <span class="sw" style="background:#D9D2CB"></span> ghost base (for marks)</div>
+    <h2>Preview</h2>
+    <input id="text" type="text" style="width:100%" value="สวัสดีครับ ฟอนต์ของฉัน ปั้น กี่ ญี่ปุ่น ฐาน น้ำ Hello pixel font.">
+    <canvas id="preview"></canvas>
+    <h2>Real font (rebuilt after each save)</h2>
+    <div id="live" contenteditable="true" spellcheck="false">สวัสดีครับ ฟอนต์ของฉัน Hello</div>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let data = null, handle = null, cur = null, undo = [], dirty = false;
+const COLS = [-8, 16], ROWS = [-8, 15];  // editing window in cells: x from..to, y from..to (y up, 0 = baseline)
+const NC = COLS[1] - COLS[0], NR = ROWS[1] - ROWS[0];
+
+function say(t) { $("#status").innerHTML = t; }
+function cells(g) {  // glyph -> Set of "x,y" (absolute cells, y up)
+  const s = new Set(), top = g.y + g.px.length - 1;
+  g.px.forEach((row, r) => [...row].forEach((v, k) => { if (v === "#") s.add((g.x + k) + "," + (top - r)); }));
+  return s;
+}
+function store(g, s) {  // Set -> glyph rows, cropped
+  if (!s.size) { g.px = []; return; }
+  const pts = [...s].map(p => p.split(",").map(Number));
+  const x0 = Math.min(...pts.map(p => p[0])), x1 = Math.max(...pts.map(p => p[0]));
+  const y0 = Math.min(...pts.map(p => p[1])), y1 = Math.max(...pts.map(p => p[1]));
+  g.x = x0; g.y = y0; g.px = [];
+  for (let y = y1; y >= y0; y--) { let r = ""; for (let x = x0; x <= x1; x++) r += s.has(x + "," + y) ? "#" : "."; g.px.push(r); }
+}
+
+function drawGlyph(ctx, g, ox, oy, sc, color) {  // ox,oy = pen origin on baseline (canvas px)
+  ctx.fillStyle = color;
+  const top = g.y + g.px.length - 1;
+  g.px.forEach((row, r) => [...row].forEach((v, k) => { if (v === "#") ctx.fillRect(ox + (g.x + k) * sc, oy - (top - r + 1) * sc, sc, sc); }));
+}
+
+function thumb(ch) {
+  const g = data.glyphs[ch], c = document.createElement("canvas"), sc = 1;
+  c.width = 36; c.height = 32; const ctx = c.getContext("2d");
+  const isMark = g.w === 0;
+  drawGlyph(ctx, g, isMark ? 24 : 4, 23, sc, "#1A1714");
+  return c;
+}
+function buildList() {
+  const L = $("#list"); L.innerHTML = "";
+  Object.keys(data.glyphs).forEach(ch => {
+    const b = document.createElement("button");
+    b.title = ch + "  U+" + ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
+    b.append(thumb(ch)); const s = document.createElement("span"); s.textContent = ch === " " ? "space" : (data.glyphs[ch].w === 0 ? "◌" + ch : ch); b.append(s);
+    if (data.glyphs[ch].edited) b.classList.add("edited");
+    if (ch === cur) b.classList.add("on");
+    b.onclick = () => pick(ch); b.dataset.ch = ch;
+    L.append(b);
+  });
+}
+function refreshThumb(ch) {
+  const b = [...$("#list").children].find(b => b.dataset.ch === ch); if (!b) return;
+  b.replaceChild(thumb(ch), b.firstChild); b.classList.toggle("edited", !!data.glyphs[ch].edited);
+}
+
+function zoom() { return +$("#zoom").value; }
+function drawGrid() {
+  const c = $("#grid"), z = zoom(); c.width = NC * z; c.height = NR * z;
+  const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+  const X = x => (x - COLS[0]) * z, Y = y => (ROWS[1] - y) * z;  // cell y (bottom edge) -> canvas
+  if (!cur) return;
+  const g = data.glyphs[cur];
+  // ghost base letter for marks (zero width): drawn so the mark's pen origin is the base's advance
+  if (g.w === 0) { const b = data.glyphs[$("#ghost").value]; if (b) drawGlyph(ctx, b, X(-b.w), Y(0), z, "#D9D2CB"); }
+  drawGlyph(ctx, g, X(0), Y(0), z, "#1A1714");
+  ctx.strokeStyle = "#F3EFEC"; ctx.lineWidth = 1;
+  for (let i = 0; i <= NC; i++) { ctx.beginPath(); ctx.moveTo(i * z + .5, 0); ctx.lineTo(i * z + .5, c.height); ctx.stroke(); }
+  for (let j = 0; j <= NR; j++) { ctx.beginPath(); ctx.moveTo(0, j * z + .5); ctx.lineTo(c.width, j * z + .5); ctx.stroke(); }
+  const hline = (y, col) => { ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, Y(y)); ctx.lineTo(c.width, Y(y)); ctx.stroke(); };
+  const vline = (x, col) => { ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(X(x), 0); ctx.lineTo(X(x), c.height); ctx.stroke(); };
+  hline(0, "#FA5A14"); hline(data.body, "#2D6CDF"); hline(8, "#9BC53D"); hline(11, "#B388EB"); hline(-2, "#E9C46A"); vline(0, "#FA5A14"); vline(g.w, "#E0457B");
+  // selection: selected pixels in orange, the box being dragged as a dashed line
+  if (sel) { ctx.fillStyle = "#FA5A14"; sel.forEach(k => { const [x, y] = k.split(",").map(Number); ctx.fillRect(X(x) + 1, Y(y) - z + 1, z - 1, z - 1); }); }
+  if (drag && drag.type === "box") {
+    const [x0, x1, y0, y1] = boxOf(drag);
+    ctx.strokeStyle = "#FA5A14"; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+    ctx.strokeRect(X(x0), Y(y1) - z, (x1 - x0 + 1) * z, (y1 - y0 + 1) * z); ctx.setLineDash([]);
+  }
+}
+
+function preview() {
+  const c = $("#preview"), sc = 4, text = $("#text").value;
+  const w = [...text].reduce((a, ch) => a + (data.glyphs[ch] ? data.glyphs[ch].w + spacing(ch)[1] : 8), 0);
+  c.width = Math.max(w * sc + 40, 400); c.height = 24 * sc;
+  const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+  let pen = 20; const base = 16 * sc;
+  for (const ch of text) {
+    const g = data.glyphs[ch]; if (!g) { pen += 8 * sc; continue; }
+    const [off, extra] = spacing(ch);
+    drawGlyph(ctx, g, pen + off * sc, base, sc, ch === cur ? "#FA5A14" : "#1A1714"); pen += (g.w + extra) * sc;
+  }
+}
+// letter spacing, as build.py adds it: half a track each side of a letter; marks and ำ sit back over the letter before
+function spacing(ch) {
+  const t = data.track ?? 1;
+  return data.glyphs[ch].w === 0 || ch === "ำ" ? [-t / 2, 0] : [t / 2, t];
+}
+
+function pick(ch) {
+  cur = ch; sel = null; drag = null; selInfo(); $("#cur").textContent = data.glyphs[ch].w === 0 ? "◌" + ch : ch; $("#wval").textContent = data.glyphs[ch].w;
+  [...$("#list").children].forEach(b => b.classList.toggle("on", b.dataset.ch === ch));
+  drawGrid(); preview();
+}
+function change(fn) {
+  const g = data.glyphs[cur]; undo.push([cur, JSON.stringify(g)]); if (undo.length > 200) undo.shift();
+  fn(g); g.edited = true; dirty = true; $("#wval").textContent = g.w; drawGrid(); preview(); refreshThumb(cur); autosave();
+}
+
+// painting
+let painting = null;
+function cellAt(e) {
+  const r = $("#grid").getBoundingClientRect(), z = r.width / NC;
+  return [Math.floor((e.clientX - r.left) / z) + COLS[0], ROWS[1] - 1 - Math.floor((e.clientY - r.top) / z)];
+}
+$("#grid").addEventListener("contextmenu", e => e.preventDefault());
+$("#grid").addEventListener("pointerdown", e => {
+  if (!cur) return; e.preventDefault(); $("#grid").setPointerCapture(e.pointerId);
+  if (mode === "select") return selectDown(e);
+  const [x, y] = cellAt(e), s = cells(data.glyphs[cur]);
+  // erase with Shift or the right button; otherwise the first cell decides: empty -> draw, filled -> erase
+  painting = { on: !(e.shiftKey || e.button === 2) && !s.has(x + "," + y) };
+  paint(e, true);
+});
+$("#grid").addEventListener("pointermove", e => { if (painting) paint(e, false); else if (drag) selectMove(e); });
+window.addEventListener("pointerup", () => {
+  if (painting) autosave(); painting = null;
+  if (drag) { if (drag.type === "move" && (drag.dx || drag.dy)) autosave(); drag = null; selInfo(); drawGrid(); }
+});
+function paint(e, first) {
+  const [x, y] = cellAt(e), k = x + "," + y, g = data.glyphs[cur], s = cells(g);
+  if (painting.on === s.has(k)) return;
+  if (first) change(g => { const t = cells(g); painting.on ? t.add(k) : t.delete(k); store(g, t); });
+  else { painting.on ? s.add(k) : s.delete(k); store(g, s); g.edited = true; dirty = true; drawGrid(); preview(); refreshThumb(cur); }
+}
+
+// selection: Select mode drags a box round pixels; dragging selected pixels (or the arrows) moves only them
+let mode = "draw", sel = null, drag = null;
+const shift = (k, dx, dy) => { const [x, y] = k.split(",").map(Number); return (x + dx) + "," + (y + dy); };
+const boxOf = d => [Math.min(d.x0, d.x1), Math.max(d.x0, d.x1), Math.min(d.y0, d.y1), Math.max(d.y0, d.y1)];
+function selInfo() { $("#selinfo").textContent = sel ? sel.size + " pixel" + (sel.size > 1 ? "s" : "") + " selected · arrows move them" : (mode === "select" ? "drag a box round the pixels to move" : ""); }
+function setSel(s) { sel = s && s.size ? s : null; selInfo(); drawGrid(); }
+function setMode(m) { mode = m; $("#selmode").classList.toggle("on", m === "select"); $("#grid").style.cursor = m === "select" ? "cell" : "crosshair"; selInfo(); }
+function selectDown(e) {
+  const [x, y] = cellAt(e), g = data.glyphs[cur];
+  if (sel && sel.has(x + "," + y)) {  // grab the selection: remember the glyph without it, then re-place it on every move
+    undo.push([cur, JSON.stringify(g)]);
+    const base = cells(g); sel.forEach(k => base.delete(k));
+    drag = { type: "move", sx: x, sy: y, dx: 0, dy: 0, base, orig: sel };
+  } else {
+    drag = { type: "box", x0: x, y0: y, x1: x, y1: y, keep: e.shiftKey && sel ? new Set(sel) : new Set() };
+    selectMove(e);
+  }
+}
+function selectMove(e) {
+  const [x, y] = cellAt(e), g = data.glyphs[cur];
+  if (drag.type === "box") {
+    drag.x1 = x; drag.y1 = y; const [x0, x1, y0, y1] = boxOf(drag), s = new Set(drag.keep);
+    cells(g).forEach(k => { const [cx, cy] = k.split(",").map(Number); if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) s.add(k); });
+    sel = s.size ? s : null; selInfo(); drawGrid(); return;
+  }
+  const dx = x - drag.sx, dy = y - drag.sy; if (dx === drag.dx && dy === drag.dy) return;
+  drag.dx = dx; drag.dy = dy;
+  const s = new Set(drag.base); sel = new Set([...drag.orig].map(k => shift(k, dx, dy))); sel.forEach(k => s.add(k));
+  store(g, s); g.edited = true; dirty = true; drawGrid(); preview(); refreshThumb(cur);
+}
+function moveBy(dx, dy) {
+  if (!cur) return;
+  if (!sel) return change(g => { g.x += dx; g.y += dy; });
+  change(g => { const s = cells(g); sel.forEach(k => s.delete(k)); sel = new Set([...sel].map(k => shift(k, dx, dy))); sel.forEach(k => s.add(k)); store(g, s); });
+}
+function deleteSel() { if (cur && sel) { change(g => { const s = cells(g); sel.forEach(k => s.delete(k)); store(g, s); }); setSel(null); } }
+$("#selmode").onclick = () => setMode(mode === "select" ? "draw" : "select");
+$("#selall").onclick = () => { if (cur) { setMode("select"); setSel(cells(data.glyphs[cur])); } };
+$("#selnone").onclick = () => setSel(null);
+$("#seldel").onclick = deleteSel;
+document.querySelectorAll("[data-move]").forEach(b => b.onclick = () => { const [dx, dy] = b.dataset.move.split(",").map(Number); moveBy(dx, dy); });
+$("#wminus").onclick = () => cur && change(g => { g.w = Math.max(0, g.w - 1); });
+$("#wplus").onclick = () => cur && change(g => { g.w += 1; });
+$("#clear").onclick = () => cur && change(g => { g.px = []; });
+$("#retrace").onclick = () => cur && change(g => { delete g.edited; });
+$("#undo").onclick = doUndo;
+function doUndo() {
+  const u = undo.pop(); if (!u) return; data.glyphs[u[0]] = JSON.parse(u[1]); dirty = true; refreshThumb(u[0]); pick(u[0]); autosave();
+}
+const typing = () => { const a = document.activeElement; return a && (a.tagName === "INPUT" || a.tagName === "SELECT" || a.isContentEditable); };
+const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
+window.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "z") { e.preventDefault(); doUndo(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save(); }
+  if (typing() || !cur) return;  // keys below only when not typing in a text box
+  if ((e.metaKey || e.ctrlKey) && e.key === "a") { e.preventDefault(); $("#selall").onclick(); }
+  else if (ARROWS[e.key]) { e.preventDefault(); moveBy(...ARROWS[e.key]); }
+  else if (e.key === "Escape") setSel(null);
+  else if (e.key === "[") $("#wminus").onclick();
+  else if (e.key === "]") $("#wplus").onclick();
+  else if ((e.key === "Backspace" || e.key === "Delete") && sel) { e.preventDefault(); deleteSel(); }
+  else if ((e.key === "v" || e.key === "V") && !e.metaKey && !e.ctrlKey) setMode(mode === "select" ? "draw" : "select");
+});
+$("#ghost").oninput = drawGrid; $("#zoom").onchange = drawGrid; $("#text").oninput = preview;
+window.addEventListener("beforeunload", e => { if (dirty && !saving) { e.preventDefault(); e.returnValue = ""; } });
+
+// open / save
+function load(text, name) {
+  data = JSON.parse(text); undo = []; dirty = false; buildList(); pick(Object.keys(data.glyphs).find(c => c === "บ") || Object.keys(data.glyphs)[0]);
+  say("Opened <b>" + name + "</b>: " + Object.keys(data.glyphs).length + " glyphs, grid " + data.grid + ", body " + data.body + ".");
+}
+$("#open").onclick = async () => {
+  if (window.showOpenFilePicker) {
+    try { [handle] = await showOpenFilePicker({ types: [{ description: "Glyphs JSON", accept: { "application/json": [".json"] } }] });
+      const f = await handle.getFile(); load(await f.text(), f.name); } catch (e) { if (e.name !== "AbortError") say("Could not open: " + e.message); }
+  } else {
+    const i = document.createElement("input"); i.type = "file"; i.accept = ".json";
+    i.onchange = async () => load(await i.files[0].text(), i.files[0].name); i.click();
+  }
+};
+async function save() {
+  if (!data) return;
+  if (location.protocol.startsWith("http")) { clearTimeout(saveTimer); return postSave(); }
+  const text = JSON.stringify(data, null, 1);
+  if (handle && handle.createWritable) {
+    try { const w = await handle.createWritable(); await w.write(text); await w.close(); dirty = false; say("Saved to <b>" + handle.name + "</b> at " + new Date().toLocaleTimeString() + "."); return; }
+    catch (e) { say("Could not save in place (" + e.message + "); downloading instead."); }
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  a.download = "glyphs.json"; a.click(); dirty = false;
+  say("Downloaded the JSON. Move it back into the font folder to replace the old one.");
+}
+$("#save").onclick = save;
+
+// ── server mode (server.py): no Open, no Save, no terminal ──
+const server = location.protocol.startsWith("http");
+let saveTimer = null, fontVersion = 0, saving = false, again = false, built = true;
+let FONT = "MyPixelFont-Regular";  // file name the server builds: the font name in ASCII letters and digits (build.py stem)
+const stem = n => (String(n || "My Pixel Font").replace(/[^A-Za-z0-9]/g, "") || "PixelFont") + "-Regular";
+function autosave() { if (!server) return; clearTimeout(saveTimer); saveTimer = setTimeout(postSave, 500); }
+async function postSave() {
+  if (saving) { again = true; return; }
+  saving = true; say("Saving and rebuilding…");
+  try {
+    const r = await fetch("/glyphs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data, null, 1) });
+    const j = await r.json(); dirty = false; built = !!j.built;
+    $("#report").textContent = j.report || ""; $("#report").classList.toggle("fail", !j.ok);
+    const last = (j.report || "").trim().split("\n").pop(); $("#reportbox").hidden = false;
+    $("#checkline").textContent = "Look-alike check: " + (j.ok ? last : last.replace("FAIL:", "too close:")) + " (open for every pair)"; $("#checkline").classList.toggle("fail", !j.ok);
+    say(j.built ? (j.ok ? "Saved and rebuilt at " : "Saved and rebuilt (a look-alike pair is under 3 cells) at ") + new Date().toLocaleTimeString() + "." : "Saved, but the build failed: see the report above.");
+    if (j.built) await liveFont();
+  } catch (e) { say("Could not reach the editor server (" + e.message + "). Is it still running?"); }
+  saving = false; if (again) { again = false; postSave(); }
+}
+async function liveFont() {
+  const f = new FontFace("LiveF", "url(" + FONT + ".woff2?v=" + (++fontVersion) + ")");
+  await f.load(); [...document.fonts].filter(x => x.family === "LiveF").forEach(x => document.fonts.delete(x)); document.fonts.add(f);
+}
+// export: finish any pending save and rebuild, then download the font the server just built
+async function exportFont(ext) {
+  if (dirty) { clearTimeout(saveTimer); postSave(); }
+  for (let i = 0; (saving || dirty) && i < 150; i++) await new Promise(r => setTimeout(r, 100));
+  if (saving || dirty) return say("Still rebuilding; try Export again in a moment.");
+  if (!built) return say("The last build failed, so there is no fresh font to export. See the report above.");
+  const r = await fetch(FONT + "." + ext + "?v=" + Date.now());
+  if (!r.ok) return say("Could not fetch the font file (" + r.status + ").");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = FONT + "." + ext; a.click();
+  say(ext === "ttf" ? "Exported <b>" + FONT + ".ttf</b> to Downloads. Double-click it to install; then pick it in Keynote, Canva, Figma, Word…"
+                    : "Exported <b>" + FONT + ".woff2</b> to Downloads: the web version, for a website's @font-face.");
+}
+$("#exttf").onclick = () => exportFont("ttf");
+$("#exwoff").onclick = () => exportFont("woff2");
+if (server) {
+  $("#open").style.display = "none"; $("#exttf").hidden = false; $("#exwoff").hidden = false; $("#namebox").hidden = false;
+  $("#fname").onchange = () => { if (!data) return; data.name = $("#fname").value.trim() || "My Pixel Font"; FONT = stem(data.name); dirty = true; autosave(); };
+  $("#save").textContent = "Save now";
+  fetch("/glyphs").then(r => r.text()).then(t => { load(t, "glyphs.json"); $("#fname").value = data.name || "My Pixel Font"; FONT = stem(data.name); say("Loaded the font. Every change saves itself and rebuilds the font in about a second."); liveFont(); });
+}
+</script>
+</body>
+</html>
